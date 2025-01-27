@@ -1,5 +1,5 @@
 # Pomodoro Timer CLI 🍅
-![Release](https://img.shields.io/github/v/release/SPHTI/Pomodoro-Timer-CLI?style=flat-square&logo=github&color=3178C6)
+![Release](https://img.shields.io/github/release/SPHTI/Pomodoro-Timer-CLI?style=flat-square&logo=github&color=3178C6)
 ![Last Commit](https://img.shields.io/github/last-commit/SPHTI/Pomodoro-Timer-CLI?style=flat-square&logo=git&color=7E4DD2)
 ![Repo Size](https://img.shields.io/github/repo-size/SPHTI/Pomodoro-Timer-CLI?style=flat-square&logo=github&color=4B89DC)
 ![C++](https://img.shields.io/badge/C++-17+-00599C?style=flat-square&logo=c%2B%2B&logoColor=white)
