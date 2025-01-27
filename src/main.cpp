@@ -4,179 +4,170 @@
 #include <string>
 #include <cctype>
 #include <cmath>
+
+#ifdef _WIN32
 #include <windows.h>
+#endif
 
 using namespace std;
 using namespace chrono;
 
-const int PROGRESS_BAR_WIDTH = 50; // Ширина прогресс-бара в символах
+// Конфигурация стиля
+const int PROGRESS_BAR_WIDTH = 30;
+const string COLOR_WORK = "\033[1;32m";  // Зеленый
+const string COLOR_BREAK = "\033[1;33m"; // Желтый
+const string COLOR_RESET = "\033[0m";
+const string BORDER = "║";
+const string CORNER_TOP = "╔══════════════════════════════════════╗";
+const string CORNER_BOT = "╚══════════════════════════════════════╝";
 
-// Функция для отображения прогресс-бара
-void display_progress(int current, int total, const string& label) {
-    float progress = static_cast<float>(current) / total;
+// Активация поддержки ANSI-цветов и UTF-8 для Windows
+#ifdef _WIN32
+bool is_windows7_or_newer() {
+    OSVERSIONINFOEX osvi = { sizeof(OSVERSIONINFOEX) };
+    DWORDLONG mask = VerSetConditionMask(
+        VerSetConditionMask(
+            VerSetConditionMask(0, VER_MAJORVERSION, VER_GREATER_EQUAL),
+            VER_MINORVERSION, VER_GREATER_EQUAL),
+        VER_SERVICEPACKMAJOR, VER_GREATER_EQUAL);
+
+    osvi.dwMajorVersion = 6;
+    osvi.dwMinorVersion = 1;
+    osvi.wServicePackMajor = 0;
+
+    return VerifyVersionInfo(&osvi, 
+        VER_MAJORVERSION | VER_MINORVERSION | VER_SERVICEPACKMAJOR, 
+        mask) != FALSE;
+}
+
+void enable_vt_mode() {
+    // Устанавливаем кодовую страницу UTF-8
+    SetConsoleOutputCP(CP_UTF8);
+    SetConsoleCP(CP_UTF8);
+    
+    // Активируем VT-режим для цветов
+    HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
+    DWORD dwMode = 0;
+    GetConsoleMode(hOut, &dwMode);
+    dwMode |= ENABLE_VIRTUAL_TERMINAL_PROCESSING;
+    SetConsoleMode(hOut, dwMode);
+}
+#endif
+
+void print_header(const string& text) {
+    cout << CORNER_TOP << "\n"
+         << BORDER << "  " << text << string(36 - text.length(), ' ') << BORDER << "\n"
+         << CORNER_BOT << endl;
+}
+
+void display_progress(int elapsed, int total, const string& label, bool is_work) {
+    float progress = static_cast<float>(elapsed) / total;
     int pos = static_cast<int>(PROGRESS_BAR_WIDTH * progress);
     
-    cout << label << " [";
+    string color = is_work ? COLOR_WORK : COLOR_BREAK;
+    int remaining = total - elapsed;
+    
+    // Верхняя строка
+    cout << color << BORDER << " " << label << "\n";
+    
+    // Прогресс-бар
+    cout << BORDER << " [";
     for(int i = 0; i < PROGRESS_BAR_WIDTH; ++i) {
-        if(i < pos) cout << "=";
-        else if(i == pos) cout << ">";
-        else cout << " ";
+        cout << (i < pos ? "■" : " ");
     }
-    cout << "] " << int(progress * 100.0) << "% \r";
+    cout << "] " << int(progress * 100) << "%\n";
+    
+    // Время
+    cout << BORDER << " Remaining: " 
+         << string(remaining / 60 < 10 ? "0" : "") << remaining / 60 << ":"
+         << string(remaining % 60 < 10 ? "0" : "") << remaining % 60
+         << COLOR_RESET << "  \r\033[2A";
+    
     cout.flush();
 }
 
-// Функция для запуска таймера
-void start_timer(int minutes, const string& message) {
+void start_timer(int minutes, const string& phase_name, bool is_work) {
     const int total_seconds = minutes * 60;
-    const auto start_time = steady_clock::now();
-
-    while(true) {
-        const auto current_time = steady_clock::now();
-        const auto elapsed = duration_cast<seconds>(current_time - start_time).count();
-        const int remaining = total_seconds - static_cast<int>(elapsed);
-
-        if(remaining <= 0) break;
-
-        // Рассчет времени
-        const int min_rem = remaining / 60;
-        const int sec_rem = remaining % 60;
-        const int elapsed_seconds = total_seconds - remaining;
-        
-        // Форматирование времени
-        string time_left = "Time left: " 
-            + string(min_rem < 10 ? "0" : "") + to_string(min_rem) + ":"
-            + string(sec_rem < 10 ? "0" : "") + to_string(sec_rem);
-        
-        // Объединение с прогресс-баром
-        string full_message = message + " | " + time_left;
-        display_progress(elapsed_seconds, total_seconds, full_message);
-
-        this_thread::sleep_for(50ms);
-    }
-
-    // Очистка строки перед выводом финального сообщения
-    cout << string(100, ' ') << "\r"; // Очистка строки
-    cout << message << " | COMPLETED [";
-    for(int i = 0; i < PROGRESS_BAR_WIDTH; ++i) {
-        cout << "=";
-    }
-    cout << "] 100%\n";
-    Beep(1000, 500);
-}
-
-// Функция для подтверждения действий
-bool get_confirmation(const string& prompt) {
-    string input;
-    while(true) {
-        cout << prompt << " (Y/N): ";
-        getline(cin, input);
-
-        if(!input.empty()) {
-            char choice = toupper(input[0]);
-            if(choice == 'Y') return true;
-            if(choice == 'N') return false;
-        }
-        cout << "Invalid input. Please enter Y or N.\n";
-    }
-}
-
-// Функция для безопасного ввода чисел
-int get_valid_input(const string& prompt, int default_value) {
-    string input;
-    while(true) {
-        cout << prompt << " (default " << default_value << "): ";
-        getline(cin, input);
-
-        if(input.empty()) return default_value;
-
-        try {
-            for(char c : input) {
-                if(!isdigit(c)) throw invalid_argument("Invalid characters");
-            }
-
-            int value = stoi(input);
-            if(value <= 0) throw out_of_range("Value must be positive");
-            
-            return value;
-        }
-        catch(const exception& e) {
-            cerr << "Error: " << e.what() << ". Please try again.\n";
-            cin.clear();
-        }
-    }
-}
-
-// Основная логика Pomodoro
-void run_pomodoro(int work_min, int short_break, int long_break, 
-                 int sessions, bool confirm_each) {
-    for(int i = 0; i < sessions; ++i) {
-        const string work_msg = "Work session #" + to_string(i + 1);
-        
-        // Подтверждение рабочей сессии
-        if(confirm_each && !get_confirmation("Start " + work_msg + "?")) {
-            cout << "Pomodoro canceled!\n";
-            return;
-        }
-        
-        start_timer(work_min, work_msg);
-
-        // Короткий перерыв, кроме последней сессии
-        if(i < sessions - 1) {
-            const string break_msg = "Short break #" + to_string(i + 1);
-            
-            if(confirm_each && !get_confirmation("Start " + break_msg + "?")) {
-                cout << "Pomodoro canceled!\n";
-                return;
-            }
-            
-            start_timer(short_break, break_msg);
-        }
+    auto start_time = steady_clock::now();
+    
+    print_header(phase_name);
+    
+    for(int elapsed = 0; elapsed <= total_seconds; ++elapsed) {
+        display_progress(elapsed, total_seconds, phase_name, is_work);
+        this_thread::sleep_for(1000ms);
     }
     
-    // Длинный перерыв после всех сессий
-    if(confirm_each && !get_confirmation("Start long break?")) {
-        cout << "Long break canceled!\n";
-        return;
+    cout << "\033[2B" << COLOR_RESET;
+#ifdef _WIN32
+    Beep(800, 200); Beep(1200, 400);
+#endif
+}
+
+int get_valid_input(const string& prompt, int default_val) {
+    string input;
+    while(true) {
+        cout << "\n" << BORDER << " " << prompt << " (default " << default_val << "): ";
+        getline(cin, input);
+        
+        if(input.empty()) return default_val;
+        
+        try {
+            if(input.find_first_not_of("0123456789") != string::npos)
+                throw invalid_argument("Contains non-digit characters");
+                
+            int val = stoi(input);
+            if(val <= 0) throw out_of_range("Value must be positive");
+            return val;
+        }
+        catch(const exception& e) {
+            cout << BORDER << " \033[31mError: " << e.what() << "\033[0m\n";
+        }
     }
-    start_timer(long_break, "Long break");
+}
+
+bool get_confirmation(const string& prompt) {
+    string input;
+    cout << "\n" << BORDER << " " << prompt << " (Y/N): ";
+    getline(cin, input);
+    return !input.empty() && toupper(input[0]) == 'Y';
+}
+
+void run_pomodoro_cycle(int work_min, int short_break, int long_break, int sessions) {
+    for(int i = 0; i < sessions; ++i) {
+        start_timer(work_min, " Work Session #" + to_string(i+1), true);
+        
+        if(i < sessions - 1) {
+            start_timer(short_break, " Short Break #" + to_string(i+1), false);
+        }
+    }
+    start_timer(long_break, " Long Break", false);
 }
 
 int main() {
-    const int DEFAULT_WORK = 25;
-    const int DEFAULT_SHORT_BREAK = 5;
-    const int DEFAULT_LONG_BREAK = 15;
-    const int DEFAULT_SESSIONS = 4;
+#ifdef _WIN32
+    if (is_windows7_or_newer()) {
+        enable_vt_mode();
+    }
+#endif
 
-    cout << "==== Pomodoro Timer Setup ====\n";
+    // Настройка параметров
+    print_header(" Pomodoro Timer Setup ");
     
-    // Получение параметров от пользователя
-    int work_min = get_valid_input("Work duration (minutes)", DEFAULT_WORK);
-    int short_break = get_valid_input("Short break duration (minutes)", DEFAULT_SHORT_BREAK);
-    int long_break = get_valid_input("Long break duration (minutes)", DEFAULT_LONG_BREAK);
-    int sessions = get_valid_input("Number of work sessions", DEFAULT_SESSIONS);
+    int work_min = get_valid_input("Work duration (minutes)", 25);
+    int short_break = get_valid_input("Short break (minutes)", 5);
+    int long_break = get_valid_input("Long break (minutes)", 15);
+    int sessions = get_valid_input("Number of sessions", 4);
     
-    // Выбор режима подтверждения
-    bool confirm_each = get_confirmation("\nRequire confirmation before each stage?");
-
-    // Вывод сводки параметров
-    cout << "\n==== Timer Settings Summary ====\n";
-    cout << "Work sessions: " << sessions << "\n"
-         << "Work duration: " << work_min << " min\n"
-         << "Short break: " << short_break << " min\n"
-         << "Long break: " << long_break << " min\n"
-         << "Confirmations: " << (confirm_each ? "ENABLED" : "DISABLED") << "\n";
-
     // Подтверждение запуска
-    if(!get_confirmation("\nStart pomodoro with these settings?")) {
-        cout << "\nTimer canceled. Goodbye!\n";
+    if(!get_confirmation("Start timer with these settings?")) {
+        print_header(" Timer Canceled ");
         return 0;
     }
 
-    // Запуск Pomodoro
-    cout << "\n==== Starting Pomodoro Timer ====\n";
-    run_pomodoro(work_min, short_break, long_break, sessions, confirm_each);
+    // Запуск цикла
+    print_header(" Pomodoro Started ");
+    run_pomodoro_cycle(work_min, short_break, long_break, sessions);
+    print_header(" Pomodoro Completed ");
 
-    cout << "\n==== Pomodoro Completed! ====\n";
     return 0;
 }
